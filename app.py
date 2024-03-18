@@ -7,14 +7,54 @@ import numpy as np
 import pandas as pd
 
 
+def clean_dataset_freelancer(df):
+    df = df.drop(['Date Posted', 'Freelancer Preferred From'], axis=1)
+    df = df.filter(regex=r'^(?!.*Client).*$', axis=1)
+
+    experience_mapping = {'Entry ($)': 1, 'Intermediate ($$)': 2, 'Expert ($$$)': 3}
+    df['Experience'] = df['Experience'].map(experience_mapping)
+
+    return df
+
+def clean_dataset_jd(df):
+    pass
+
+def process_text(df, text_feature, input):
+    stop_words = set(stopwords.words('english'))
+    input = [word.lower() for word in input if word.lower() not in stop_words]
+
+    processed_text = [" ".join([word.lower() for word in word_tokenize(desc) if word.lower() not in stop_words]) for desc in df[text_feature]]
+
+    vectorizer = TfidfVectorizer()
+    job_vectors = vectorizer.fit_transform(processed_text)
+    input_vector = vectorizer.transform([" ".join(input)])
+
+    return job_vectors, input_vector
+
+
+def apply_filters(df, experience, salary):
+    df = df[(df['Budget'] >= salary[0]) & (df['Budget'] <= salary[1])]
+    df = df[df['Experience'] <= experience]
+    return df
+
+def map_experience(exp):
+    if exp == "Entry Level":
+        return 1
+    elif exp == "Mid Level":
+        return 2
+    elif exp == "Senior Level":
+        return 3
+    
+
+
 def main():
 
     people = []
     submit_flag = False
 
     skills = []
-    experience = []
-    salary = []
+    experience = None
+    salary = None
 
     dataset = st.selectbox("Choose Dataset", ["free-lancer", "jd-job"])
 
@@ -48,31 +88,42 @@ def main():
 
     if len(people) == 1:
         skills = [skill.strip() for skill in skills1.split(',')]
-        experience = experience1
+        experience = map_experience(experience1)
         salary = [salary1_min, salary1_max]
-
-        st.write('Skills:', skills)
-        st.write('Experience:', experience)
-        st.write('Salary:', salary)
         
     elif len(people) > 1:
         skills = [skill.strip() for skill in skills1.split(',')]
         skills.extend([skill.strip() for skill in skills2.split(',')])
-        experience = max(experience1, experience2)
+        temp_exp1 = map_experience(experience1)
+        temp_exp2 = map_experience(experience2)
+        experience = max(temp_exp1, temp_exp2)
         salary = [salary1_min + salary2_min, salary1_max + salary2_max]
 
-        st.write('Skills:', skills)
-        st.write('Experience:', experience)
-        st.write('Salary:', salary)
 
     if (submit_flag == True and dataset == "free-lancer"):
-        df = df.drop('Date Posted', axis=1)
-        df = df.filter(regex=r'^(?!.*Client).*$', axis=1)
+        df = clean_dataset_freelancer(df)
+        job_vectors, input_vector = process_text(df, 'Description', skills)
 
-        experience_mapping = {'Entry ($)': 1, 'Intermediate ($$)': 2, 'Expert ($$$)': 3}
-        df['Experience'] = df['Experience'].map(experience_mapping)
+        similarities = cosine_similarity(input_vector, job_vectors)
+        top_indices = np.argsort(similarities[0])[-10:][::-1]
+        top_jobs = df.loc[top_indices]
+        st.dataframe(top_jobs)
 
-        st.dataframe(df.head(3))
+        filtered_jobs = apply_filters(top_jobs, experience, salary)
+        st.dataframe(filtered_jobs)
+        
+        def highlight_same_records(row):
+            if row.name in filtered_jobs.index:
+                return ['background-color: green'] * len(row)
+            else:
+                return [''] * len(row)
+
+        styled_df = top_jobs.style.apply(highlight_same_records, axis=1)
+        st.dataframe(styled_df)
+
+
+
+
 
     if (submit_flag == True and dataset == "jd-job"):
         st.write('asdf')
