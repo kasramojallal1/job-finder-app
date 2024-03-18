@@ -8,7 +8,7 @@ import pandas as pd
 
 
 def clean_dataset_freelancer(df):
-    df = df.drop(['Date Posted', 'Freelancer Preferred From'], axis=1)
+    df = df.drop(['Date Posted', 'Freelancer Preferred From', 'Duration'], axis=1)
     df = df.filter(regex=r'^(?!.*Client).*$', axis=1)
 
     experience_mapping = {'Entry ($)': 1, 'Intermediate ($$)': 2, 'Expert ($$$)': 3}
@@ -48,37 +48,45 @@ def map_experience(exp):
 
 
 def main():
-
-    people = []
     submit_flag = False
 
-    skills = []
-    experience = None
-    salary = None
-
-    dataset = st.selectbox("Choose Dataset", ["free-lancer", "jd-job"])
+    cols = st.columns(2)
+    dataset = cols[0].radio("Choose Dataset", ["free-lancer", "jd-job"])
+    with cols[1]:
+        history_placeholder = st.container()
+    
 
     st.title("Team Information")
 
-    col1, col2, col3 = st.columns(3)
-    skills1 = col1.text_input("Skills", "")
-    experience1 = col2.selectbox("Experience", ["Entry Level", "Mid Level", "Senior Level"])
-    salary1_min, salary1_max = col3.columns(2)
-    salary1_min = salary1_min.number_input("Salary1 Min", min_value=0, value=10, step=1)
-    salary1_max = salary1_max.number_input("Salary1 Max", min_value=0, value=100, step=1)
+    if "history_list" not in st.session_state.keys():
+        st.session_state.history_list = list()
+
+    with st.form("my_form"):
+        col1, col2, col3 = st.columns(3)
+        skills = col1.text_input("Skills", "")
+        experience = col2.selectbox("Experience", ["Entry Level", "Mid Level", "Senior Level"])
+        salary_min, salary_max = col3.columns(2)
+        salary_min = salary_min.number_input("Salary Min", min_value=0, value=10, step=1)
+        salary_max = salary_max.number_input("Salary Max", min_value=0, value=100, step=1)
+        
+        if st.form_submit_button("Add"):
+            st.session_state.history_list.append([skills, experience, [salary_min, salary_max]])
+
+            with history_placeholder:
+                history_placeholder.write(len(st.session_state.history_list))
 
     col1, col2, col3 = st.columns(3)
-    skills2 = col1.text_input("Skills2", "")
-    experience2 = col2.selectbox("Experience2", ["Entry Level", "Mid Level", "Senior Level"])
-    salary2_min, salary2_max = col3.columns(2)
-    salary2_min = salary2_min.number_input("Salary2 Min", min_value=0, value=10, step=1)
-    salary2_max = salary2_max.number_input("Salary2 Max", min_value=0, value=100, step=1)
+    type_value = col1.selectbox("Type", ["All", "Fixed", "Hourly"])
+
+    category_list = ['All', 'Design', 'Video, Photo & Image', 'Business', 'Digital Marketing',
+                    'Technology & Programming', 'Music & Audio', 'Social Media',
+                    'Marketing, Branding & Sales' 'Writing & Translation']
+    category_value = col2.selectbox("Category", category_list)
+
+    number_of_entries = col3.number_input("Number of Entries", min_value=5, max_value=20, value=10, step=1)
 
     if st.button("Submit"):
         submit_flag = True
-        people.append([skills1, experience1, salary1_min, salary1_max])
-        if skills2:
-            people.append([skills2, experience2, salary2_min, salary2_max])
 
         if dataset == "free-lancer":
             df = pd.read_csv('./datasets/freelance-projects.csv')
@@ -86,18 +94,39 @@ def main():
             df = pd.read_csv('./datasets/jd_structured_data.csv')
 
 
-    if len(people) == 1:
-        skills = [skill.strip() for skill in skills1.split(',')]
-        experience = map_experience(experience1)
-        salary = [salary1_min, salary1_max]
+        if len(st.session_state.history_list) == 1:
+            skills, experience, salary = st.session_state.history_list[0]
+            skills = [skill.strip() for skill in skills.split(',')]
+            experience = map_experience(experience)
+            salary = [salary[0], salary[1]]
         
-    elif len(people) > 1:
-        skills = [skill.strip() for skill in skills1.split(',')]
-        skills.extend([skill.strip() for skill in skills2.split(',')])
-        temp_exp1 = map_experience(experience1)
-        temp_exp2 = map_experience(experience2)
-        experience = max(temp_exp1, temp_exp2)
-        salary = [salary1_min + salary2_min, salary1_max + salary2_max]
+        elif len(st.session_state.history_list) > 1:
+
+            skill_list = []
+            experience_list = []
+            salary_list = []
+
+            for value in st.session_state.history_list:
+                skill_list.append(value[0])
+                experience_list.append(value[1])
+                salary_list.append(value[2])
+            
+            skills = [skill.strip() for skill in skill_list[0].split(',')]
+            for i in range(1, len(skill_list)):
+                skills.extend([skill.strip() for skill in skill_list[i].split(',')])
+
+            for i in range(len(experience_list)):
+                experience_list[i] = map_experience(experience_list[i])
+            
+            experience = max(experience_list)
+
+            salary_min = 0
+            salary_max = 0
+            for value in salary_list:
+                salary_min += value[0]
+                salary_max += value[1]
+            
+            salary = [salary_min, salary_max]
 
 
     if (submit_flag == True and dataset == "free-lancer"):
@@ -105,12 +134,12 @@ def main():
         job_vectors, input_vector = process_text(df, 'Description', skills)
 
         similarities = cosine_similarity(input_vector, job_vectors)
-        top_indices = np.argsort(similarities[0])[-10:][::-1]
+        top_indices = np.argsort(similarities[0])[-number_of_entries:][::-1]
         top_jobs = df.loc[top_indices]
-        st.dataframe(top_jobs)
+        # st.dataframe(top_jobs)
 
         filtered_jobs = apply_filters(top_jobs, experience, salary)
-        st.dataframe(filtered_jobs)
+        # st.dataframe(filtered_jobs)
         
         def highlight_same_records(row):
             if row.name in filtered_jobs.index:
@@ -126,7 +155,7 @@ def main():
 
 
     if (submit_flag == True and dataset == "jd-job"):
-        st.write('asdf')
+        pass
 
     
 
