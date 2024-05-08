@@ -1,7 +1,3 @@
-Based on the detailed report you provided, I've drafted a README file for your project. Here it is:
-
----
-
 # Project Recommendation System
 
 ## Description
