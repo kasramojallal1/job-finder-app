@@ -136,10 +136,8 @@ def main():
         similarities = cosine_similarity(input_vector, job_vectors)
         top_indices = np.argsort(similarities[0])[-number_of_entries:][::-1]
         top_jobs = df.loc[top_indices]
-        # st.dataframe(top_jobs)
 
         filtered_jobs = apply_filters(top_jobs, experience, salary)
-        # st.dataframe(filtered_jobs)
         
         def highlight_same_records(row):
             if row.name in filtered_jobs.index:
